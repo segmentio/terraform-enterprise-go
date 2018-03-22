@@ -167,7 +167,6 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 	}
 	parsed.RawQuery = query.Encode()
 
-	fmt.Printf("Requesting %s\n", parsed.String())
 	req, err := http.NewRequest(method, parsed.String(), body)
 	if err != nil {
 		return err
