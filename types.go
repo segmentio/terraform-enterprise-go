@@ -2,6 +2,13 @@ package tfe
 
 import "time"
 
+// Organization is a Terraform Enterprise organization
+type Organization struct {
+	ID            string        `json:"id"`
+	Links         Links         `json:"links"`
+	Relationships Relationships `json:"relationships"`
+}
+
 // Workspace is a Terraform Enterprise workspace
 type Workspace struct {
 	ID            string              `json:"id"`

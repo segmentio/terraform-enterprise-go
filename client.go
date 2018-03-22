@@ -43,6 +43,21 @@ func New(atlasToken string, baseURL string) *Client {
 	}
 }
 
+// ListOrganizations lists all organizations your token can access
+func (c *Client) ListOrganizations() ([]Organization, error) {
+	path := "/api/v2/organizations"
+
+	type wrapper struct {
+		Data []Organization `json:"data"`
+	}
+
+	var resp wrapper
+	if err := c.do("GET", path, nil, nil, &resp); err != nil {
+		return []Organization{}, err
+	}
+	return resp.Data, nil
+}
+
 // ListWorkspaces lists all workspaces for a given organization
 func (c *Client) ListWorkspaces(organization string) ([]Workspace, error) {
 	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces", organization)
