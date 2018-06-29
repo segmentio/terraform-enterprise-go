@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 )
 
 const (
@@ -23,6 +24,20 @@ var (
 	ErrStateVersionNotFound = errors.New("State version not found")
 	ErrBadStatus            = errors.New("Unrecognized status code")
 )
+
+type PaginatedResponse struct {
+	Meta MetaInfo `json:"meta"`
+}
+
+type MetaInfo struct {
+	Pagination PaginationInfo `json:"pagination"`
+}
+
+type PaginationInfo struct {
+	CurrentPage int `json:"current-page"`
+	NextPage    int `json:"next-page"`
+	TotalPages  int `json:"total-pages"`
+}
 
 // Client exposes an API for communicating with Terraform Enterprise
 type Client struct {
@@ -46,8 +61,10 @@ func New(atlasToken string, baseURL string) *Client {
 // ListOrganizations lists all organizations your token can access
 func (c *Client) ListOrganizations() ([]Organization, error) {
 	path := "/api/v2/organizations"
+	orgs := []Organization{}
 
 	type wrapper struct {
+		PaginatedResponse
 		Data []Organization `json:"data"`
 	}
 
@@ -55,14 +72,26 @@ func (c *Client) ListOrganizations() ([]Organization, error) {
 	if err := c.do("GET", path, nil, nil, &resp); err != nil {
 		return []Organization{}, err
 	}
-	return resp.Data, nil
+	orgs = append(orgs, resp.Data...)
+
+	for resp.Meta.Pagination.CurrentPage < resp.Meta.Pagination.TotalPages {
+		q := url.Values{}
+		q.Add("page[number]", strconv.Itoa(resp.Meta.Pagination.CurrentPage+1))
+		if err := c.do("GET", path, nil, nil, &resp); err != nil {
+			return []Organization{}, err
+		}
+		orgs = append(orgs, resp.Data...)
+	}
+	return orgs, nil
 }
 
 // ListWorkspaces lists all workspaces for a given organization
 func (c *Client) ListWorkspaces(organization string) ([]Workspace, error) {
 	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces", organization)
+	workspaces := []Workspace{}
 
 	type wrapper struct {
+		PaginatedResponse
 		Data []Workspace `json:"data"`
 	}
 
@@ -73,8 +102,20 @@ func (c *Client) ListWorkspaces(organization string) ([]Workspace, error) {
 		}
 		return []Workspace{}, err
 	}
+	workspaces = append(workspaces, resp.Data...)
 
-	return resp.Data, nil
+	for resp.Meta.Pagination.CurrentPage < resp.Meta.Pagination.TotalPages {
+		q := url.Values{}
+		q.Add("page[number]", strconv.Itoa(resp.Meta.Pagination.CurrentPage+1))
+		if err := c.do("GET", path, nil, q, &resp); err != nil {
+			if err == ErrNotFound {
+				return []Workspace{}, ErrWorkspaceNotFound
+			}
+			return []Workspace{}, err
+		}
+		workspaces = append(workspaces, resp.Data...)
+	}
+	return workspaces, nil
 }
 
 // GetWorkspace gets a specific workspace
@@ -101,10 +142,12 @@ func (c *Client) ListStateVersions(organization, workspace string) ([]StateVersi
 	q := url.Values{}
 	q.Add("filter[organization][name]", organization)
 	q.Add("filter[workspace][name]", workspace)
+	svs := []StateVersion{}
 
 	path := "/api/v2/state-versions"
 
 	type wrapper struct {
+		PaginatedResponse
 		Data []StateVersion `json:"data"`
 	}
 
@@ -115,8 +158,22 @@ func (c *Client) ListStateVersions(organization, workspace string) ([]StateVersi
 		}
 		return []StateVersion{}, err
 	}
+	svs = append(svs, resp.Data...)
 
-	return resp.Data, nil
+	for resp.Meta.Pagination.CurrentPage < resp.Meta.Pagination.TotalPages {
+		q = url.Values{}
+		q.Add("filter[organization][name]", organization)
+		q.Add("filter[workspace][name]", workspace)
+		q.Add("page[number]", strconv.Itoa(resp.Meta.Pagination.CurrentPage+1))
+		if err := c.do("GET", path, nil, q, &resp); err != nil {
+			if err == ErrNotFound {
+				return []StateVersion{}, ErrStateVersionNotFound
+			}
+			return []StateVersion{}, err
+		}
+		svs = append(svs, resp.Data...)
+	}
+	return svs, nil
 }
 
 // GetStateVersion gets a specific state version
