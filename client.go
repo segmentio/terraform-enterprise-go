@@ -266,7 +266,7 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 }
 
 func withRetries(f func() error, shouldRetry func(e error) bool, attempts int) error {
-	interval := 10 * time.Millisecond
+	interval := 500 * time.Millisecond
 	var err error
 	for i := 0; i < attempts; i++ {
 		err = f()
