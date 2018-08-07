@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 )
 
 const (
@@ -224,30 +226,54 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 	}
 	parsed.RawQuery = query.Encode()
 
-	req, err := http.NewRequest(method, parsed.String(), body)
-	if err != nil {
-		return err
+	return withRetries(
+		func() error {
+			req, err := http.NewRequest(method, parsed.String(), body)
+			if err != nil {
+				return err
+			}
+
+			req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.AtlasToken))
+			req.Header.Add("Content-Type", "application/vnd.api+json")
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+
+			switch {
+			case resp.StatusCode == 401:
+				return ErrUnauthorized
+			case resp.StatusCode == 404:
+				return ErrNotFound
+			case resp.StatusCode != 200:
+				return ErrBadStatus
+			}
+
+			decoder := json.NewDecoder(resp.Body)
+			err = decoder.Decode(&recv)
+			return err
+		},
+		func(e error) bool {
+			if err == ErrBadStatus {
+				return true
+			}
+			return false
+		},
+		10,
+	)
+}
+
+func withRetries(f func() error, shouldRetry func(e error) bool, attempts int) error {
+	interval := 500 * time.Millisecond
+	var err error
+	for i := 0; i < attempts; i++ {
+		err = f()
+		if !shouldRetry(err) {
+			return err
+		}
+		time.Sleep(interval * time.Duration(math.Pow(2, float64(i))))
 	}
-
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.AtlasToken))
-	req.Header.Add("Content-Type", "application/vnd.api+json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	switch {
-	case resp.StatusCode == 401:
-		return ErrUnauthorized
-	case resp.StatusCode == 404:
-		return ErrNotFound
-	case resp.StatusCode != 200:
-		return ErrBadStatus
-	}
-
-	decoder := json.NewDecoder(resp.Body)
-	err = decoder.Decode(&recv)
 	return err
 }
