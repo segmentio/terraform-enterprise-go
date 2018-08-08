@@ -178,6 +178,34 @@ func (c *Client) ListStateVersions(organization, workspace string) ([]StateVersi
 	return svs, nil
 }
 
+// GetLatestStateVersion gets the latest state version for a given
+// workspace
+func (c *Client) GetLatestStateVersion(organization, workspace string) (StateVersion, error) {
+	q := url.Values{}
+	q.Add("filter[organization][name]", organization)
+	q.Add("filter[workspace][name]", workspace)
+
+	path := "/api/v2/state-versions"
+
+	type wrapper struct {
+		Data []StateVersion `json:"data"`
+	}
+
+	var resp wrapper
+	if err := c.do("GET", path, nil, q, &resp); err != nil {
+		if err == ErrNotFound {
+			return StateVersion{}, ErrStateVersionNotFound
+		}
+		return StateVersion{}, err
+	}
+
+	if len(resp.Data) < 1 {
+		return StateVersion{}, ErrStateVersionNotFound
+	}
+
+	return resp.Data[0], nil
+}
+
 // GetStateVersion gets a specific state version
 func (c *Client) GetStateVersion(organization, workspace, stateVersion string) (StateVersion, error) {
 	path := fmt.Sprintf("/api/v2/state-versions/%s", stateVersion)
