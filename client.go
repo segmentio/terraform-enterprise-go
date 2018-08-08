@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -50,6 +51,8 @@ type Client struct {
 	// BaseURL is the base used for all api calls.  If you are using
 	// Terraform Enterprise SaaS, you can set this to DefaultBaseURL
 	BaseURL string
+
+	client *http.Client
 }
 
 // New creates and returns a new Terraform Enterprise client
@@ -57,6 +60,9 @@ func New(atlasToken string, baseURL string) *Client {
 	return &Client{
 		AtlasToken: atlasToken,
 		BaseURL:    baseURL,
+		client: &http.Client{
+			Timeout: time.Second * 10,
+		},
 	}
 }
 
@@ -236,7 +242,7 @@ func (c *Client) DownloadState(organization, workspace, stateVersion string) ([]
 	err = withRetries(
 		func() error {
 			var err error
-			resp, err = http.Get(sv.Attributes.HostedStateDownloadURL)
+			resp, err = c.client.Get(sv.Attributes.HostedStateDownloadURL)
 			if err != nil {
 				return err
 			}
@@ -285,7 +291,7 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 			req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.AtlasToken))
 			req.Header.Add("Content-Type", "application/vnd.api+json")
 
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := c.client.Do(req)
 			if err != nil {
 				return err
 			}
@@ -306,6 +312,10 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 		},
 		func(e error) bool {
 			if e == ErrBadStatus {
+				return true
+			}
+			if err, ok := err.(net.Error); ok && err.Timeout() {
+				// Retry timeouts
 				return true
 			}
 			return false
