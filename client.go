@@ -277,7 +277,7 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 			return err
 		},
 		func(e error) bool {
-			if err == ErrBadStatus {
+			if e == ErrBadStatus {
 				return true
 			}
 			return false
