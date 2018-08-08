@@ -204,13 +204,34 @@ func (c *Client) DownloadState(organization, workspace, stateVersion string) ([]
 		return nil, err
 	}
 
-	resp, err := http.Get(sv.Attributes.HostedStateDownloadURL)
+	var resp *http.Response
+	err = withRetries(
+		func() error {
+			var err error
+			resp, err = http.Get(sv.Attributes.HostedStateDownloadURL)
+			if err != nil {
+				return err
+			}
+
+			if resp.StatusCode != 200 {
+				return ErrBadStatus
+			}
+			return nil
+		},
+		func(e error) bool {
+			if e == ErrBadStatus {
+				return true
+			}
+			return false
+		},
+		10,
+	)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	raw, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
 	return raw, err
 }
 
@@ -256,7 +277,7 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 			return err
 		},
 		func(e error) bool {
-			if err == ErrBadStatus {
+			if e == ErrBadStatus {
 				return true
 			}
 			return false
