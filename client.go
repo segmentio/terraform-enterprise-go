@@ -314,7 +314,7 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 			if e == ErrBadStatus {
 				return true
 			}
-			if err, ok := err.(net.Error); ok && err.Timeout() {
+			if e, ok := e.(net.Error); ok && e.Timeout() {
 				// Retry timeouts
 				return true
 			}
