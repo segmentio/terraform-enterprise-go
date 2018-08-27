@@ -256,6 +256,10 @@ func (c *Client) DownloadState(organization, workspace, stateVersion string) ([]
 			if e == ErrBadStatus {
 				return true
 			}
+			if e, ok := e.(net.Error); ok && e.Timeout() {
+				// Retry timeouts
+				return true
+			}
 			return false
 		},
 		10,
