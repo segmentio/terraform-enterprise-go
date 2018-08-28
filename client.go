@@ -16,7 +16,8 @@ import (
 
 const (
 	// DefaultBaseURL is the default base url to reach Terraform Enterprise
-	DefaultBaseURL = "https://app.terraform.io"
+	DefaultBaseURL  = "https://app.terraform.io"
+	DefaultPageSize = 150
 )
 
 // Error Types
@@ -68,6 +69,9 @@ func New(atlasToken string, baseURL string) *Client {
 
 // ListOrganizations lists all organizations your token can access
 func (c *Client) ListOrganizations() ([]Organization, error) {
+	q := url.Values{}
+	q.Add("page[size]", DefaultPageSize)
+
 	path := "/api/v2/organizations"
 	orgs := []Organization{}
 
@@ -83,8 +87,7 @@ func (c *Client) ListOrganizations() ([]Organization, error) {
 	orgs = append(orgs, resp.Data...)
 
 	for resp.Meta.Pagination.CurrentPage < resp.Meta.Pagination.TotalPages {
-		q := url.Values{}
-		q.Add("page[number]", strconv.Itoa(resp.Meta.Pagination.CurrentPage+1))
+		q.Set("page[number]", strconv.Itoa(resp.Meta.Pagination.CurrentPage+1))
 		if err := c.do("GET", path, nil, nil, &resp); err != nil {
 			return []Organization{}, err
 		}
@@ -95,6 +98,9 @@ func (c *Client) ListOrganizations() ([]Organization, error) {
 
 // ListWorkspaces lists all workspaces for a given organization
 func (c *Client) ListWorkspaces(organization string) ([]Workspace, error) {
+	q := url.Values{}
+	q.Add("page[size]", DefaultPageSize)
+
 	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces", organization)
 	workspaces := []Workspace{}
 
@@ -113,8 +119,8 @@ func (c *Client) ListWorkspaces(organization string) ([]Workspace, error) {
 	workspaces = append(workspaces, resp.Data...)
 
 	for resp.Meta.Pagination.CurrentPage < resp.Meta.Pagination.TotalPages {
-		q := url.Values{}
-		q.Add("page[number]", strconv.Itoa(resp.Meta.Pagination.CurrentPage+1))
+		q.Set("page[number]", strconv.Itoa(resp.Meta.Pagination.CurrentPage+1))
+
 		if err := c.do("GET", path, nil, q, &resp); err != nil {
 			if err == ErrNotFound {
 				return []Workspace{}, ErrWorkspaceNotFound
@@ -150,6 +156,8 @@ func (c *Client) ListStateVersions(organization, workspace string) ([]StateVersi
 	q := url.Values{}
 	q.Add("filter[organization][name]", organization)
 	q.Add("filter[workspace][name]", workspace)
+	q.Add("page[size]", DefaultPageSize)
+
 	svs := []StateVersion{}
 
 	path := "/api/v2/state-versions"
@@ -169,10 +177,8 @@ func (c *Client) ListStateVersions(organization, workspace string) ([]StateVersi
 	svs = append(svs, resp.Data...)
 
 	for resp.Meta.Pagination.CurrentPage < resp.Meta.Pagination.TotalPages {
-		q = url.Values{}
-		q.Add("filter[organization][name]", organization)
-		q.Add("filter[workspace][name]", workspace)
-		q.Add("page[number]", strconv.Itoa(resp.Meta.Pagination.CurrentPage+1))
+		q.Set("page[number]", strconv.Itoa(resp.Meta.Pagination.CurrentPage+1))
+
 		if err := c.do("GET", path, nil, q, &resp); err != nil {
 			if err == ErrNotFound {
 				return []StateVersion{}, ErrStateVersionNotFound
@@ -190,6 +196,7 @@ func (c *Client) GetLatestStateVersion(organization, workspace string) (StateVer
 	q := url.Values{}
 	q.Add("filter[organization][name]", organization)
 	q.Add("filter[workspace][name]", workspace)
+	q.Add("page[size]", 1)
 
 	path := "/api/v2/state-versions"
 
@@ -214,6 +221,9 @@ func (c *Client) GetLatestStateVersion(organization, workspace string) (StateVer
 
 // GetStateVersion gets a specific state version
 func (c *Client) GetStateVersion(organization, workspace, stateVersion string) (StateVersion, error) {
+	q := url.Values()
+	q.Add("page[size]", DefaultPageSize)
+
 	path := fmt.Sprintf("/api/v2/state-versions/%s", stateVersion)
 
 	type wrapper struct {
@@ -221,7 +231,7 @@ func (c *Client) GetStateVersion(organization, workspace, stateVersion string) (
 	}
 
 	var resp wrapper
-	if err := c.do("GET", path, nil, nil, &resp); err != nil {
+	if err := c.do("GET", path, nil, q, &resp); err != nil {
 		if err == ErrNotFound {
 			return StateVersion{}, ErrStateVersionNotFound
 		}
