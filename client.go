@@ -17,7 +17,7 @@ import (
 const (
 	// DefaultBaseURL is the default base url to reach Terraform Enterprise
 	DefaultBaseURL  = "https://app.terraform.io"
-	DefaultPageSize = 150
+	DefaultPageSize = 20
 )
 
 // Error Types
