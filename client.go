@@ -42,6 +42,61 @@ type PaginationInfo struct {
 	TotalPages  int `json:"total-pages"`
 }
 
+// HTTPClient looks like net/http.Client, without the convenience methods
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+type retryHTTPClient struct {
+	// http.Client used for requests
+	Client *http.Client
+
+	// Retries happen every Interval * 2 ** attempt_num
+	Interval time.Duration
+
+	// Give up after this many attempts
+	MaxAttempts int
+
+	// ShouldRetry() -> true means the request will be retried
+	// if nil, uses defaultShouldRetry
+	ShouldRetry func(*http.Response, error) bool
+}
+
+func (c *retryHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	if req.Body != nil {
+		// otherwise we'd have to buffer Body ourselves
+		// no requests in Client currently use Body
+		panic("Retries for requests with Body unsupported")
+	}
+	var shouldRetry func(*http.Response, error) bool
+	if c.ShouldRetry == nil {
+		shouldRetry = defaultShouldRetry
+	} else {
+		shouldRetry = c.ShouldRetry
+	}
+	var err error
+	var resp *http.Response
+	for i := 0; i < c.MaxAttempts; i++ {
+		resp, err = c.Client.Do(req)
+		if !shouldRetry(resp, err) {
+			return resp, err
+		}
+		time.Sleep(c.Interval * time.Duration(math.Pow(2, float64(i))))
+	}
+	return resp, err
+}
+
+func defaultShouldRetry(resp *http.Response, e error) bool {
+	if resp.StatusCode != 200 {
+		return true
+	}
+	if e, ok := e.(net.Error); ok && e.Timeout() {
+		// Retry timeouts
+		return true
+	}
+	return false
+}
+
 // Client exposes an API for communicating with Terraform Enterprise
 type Client struct {
 	// AtlasToken is the token used to authenticate with Terraform Enterprise,
@@ -52,16 +107,20 @@ type Client struct {
 	// Terraform Enterprise SaaS, you can set this to DefaultBaseURL
 	BaseURL string
 
-	client *http.Client
+	client HTTPClient
 }
 
 // New creates and returns a new Terraform Enterprise client
 func New(atlasToken string, baseURL string) *Client {
-	return NewWithClient(
+	return NewWithHTTPClient(
 		atlasToken,
 		baseURL,
-		&http.Client{
-			Timeout: time.Second * 10,
+		&retryHTTPClient{
+			Client: &http.Client{
+				Timeout: time.Second * 10,
+			},
+			Interval:    500 * time.Millisecond,
+			MaxAttempts: 10,
 		},
 	)
 }
@@ -69,6 +128,16 @@ func New(atlasToken string, baseURL string) *Client {
 // NewWithClient creates and returns a new Terraform Enterprise client, like New,
 // but with a custom http.Client
 func NewWithClient(atlasToken string, baseURL string, client *http.Client) *Client {
+	return &Client{
+		AtlasToken: atlasToken,
+		BaseURL:    baseURL,
+		client:     client,
+	}
+}
+
+// NewWithClient creates and returns a new Terraform Enterprise client, like New,
+// but with a custom HTTPClient
+func NewWithHTTPClient(atlasToken string, baseURL string, client HTTPClient) *Client {
 	return &Client{
 		AtlasToken: atlasToken,
 		BaseURL:    baseURL,
@@ -248,38 +317,19 @@ func (c *Client) DownloadState(organization, workspace, stateVersion string) ([]
 		return nil, err
 	}
 
-	var resp *http.Response
-	err = withRetries(
-		func() error {
-			var err error
-			resp, err = c.client.Get(sv.Attributes.HostedStateDownloadURL)
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode != 200 {
-				return ErrBadStatus
-			}
-			return nil
-		},
-		func(e error) bool {
-			if e == ErrBadStatus {
-				return true
-			}
-			if e, ok := e.(net.Error); ok && e.Timeout() {
-				// Retry timeouts
-				return true
-			}
-			return false
-		},
-		10,
-	)
+	// the HostedStateDownloadURL is an unauthenticated "secret" URL
+	req, err := http.NewRequest("GET", sv.Attributes.HostedStateDownloadURL, nil)
 	if err != nil {
 		return nil, err
 	}
+	// we avoid c.do because we don't want to unmarshal the body
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
 
 	raw, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
 	return raw, err
 }
 
@@ -295,58 +345,30 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 	}
 	parsed.RawQuery = query.Encode()
 
-	return withRetries(
-		func() error {
-			req, err := http.NewRequest(method, parsed.String(), body)
-			if err != nil {
-				return err
-			}
-
-			req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.AtlasToken))
-			req.Header.Add("Content-Type", "application/vnd.api+json")
-
-			resp, err := c.client.Do(req)
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
-
-			switch {
-			case resp.StatusCode == 401:
-				return ErrUnauthorized
-			case resp.StatusCode == 404:
-				return ErrNotFound
-			case resp.StatusCode != 200:
-				return ErrBadStatus
-			}
-
-			decoder := json.NewDecoder(resp.Body)
-			err = decoder.Decode(&recv)
-			return err
-		},
-		func(e error) bool {
-			if e == ErrBadStatus {
-				return true
-			}
-			if e, ok := e.(net.Error); ok && e.Timeout() {
-				// Retry timeouts
-				return true
-			}
-			return false
-		},
-		10,
-	)
-}
-
-func withRetries(f func() error, shouldRetry func(e error) bool, attempts int) error {
-	interval := 500 * time.Millisecond
-	var err error
-	for i := 0; i < attempts; i++ {
-		err = f()
-		if !shouldRetry(err) {
-			return err
-		}
-		time.Sleep(interval * time.Duration(math.Pow(2, float64(i))))
+	req, err := http.NewRequest(method, parsed.String(), body)
+	if err != nil {
+		return err
 	}
+
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.AtlasToken))
+	req.Header.Add("Content-Type", "application/vnd.api+json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	switch {
+	case resp.StatusCode == 401:
+		return ErrUnauthorized
+	case resp.StatusCode == 404:
+		return ErrNotFound
+	case resp.StatusCode != 200:
+		return ErrBadStatus
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	err = decoder.Decode(&recv)
 	return err
 }
