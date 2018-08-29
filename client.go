@@ -57,12 +57,22 @@ type Client struct {
 
 // New creates and returns a new Terraform Enterprise client
 func New(atlasToken string, baseURL string) *Client {
+	return NewWithClient(
+		atlasToken,
+		baseURL,
+		&http.Client{
+			Timeout: time.Second * 10,
+		},
+	)
+}
+
+// NewWithClient creates and returns a new Terraform Enterprise client, like New,
+// but with a custom http.Client
+func NewWithClient(atlasToken string, baseURL string, client *http.Client) *Client {
 	return &Client{
 		AtlasToken: atlasToken,
 		BaseURL:    baseURL,
-		client: &http.Client{
-			Timeout: time.Second * 10,
-		},
+		client:     client,
 	}
 }
 
