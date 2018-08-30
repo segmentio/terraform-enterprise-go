@@ -77,6 +77,8 @@ func NewWithClient(atlasToken string, baseURL string, client *http.Client) *Clie
 }
 
 // ListOrganizations lists all organizations your token can access
+// Requires P requests, where P is the number of pages
+// - /api/v2/organizations
 func (c *Client) ListOrganizations() ([]Organization, error) {
 	path := "/api/v2/organizations"
 	orgs := []Organization{}
@@ -104,6 +106,8 @@ func (c *Client) ListOrganizations() ([]Organization, error) {
 }
 
 // ListWorkspaces lists all workspaces for a given organization
+// Requires P requests, where P is the number of pages
+// - /api/v2/organizations/:organizationName/workspaces
 func (c *Client) ListWorkspaces(organization string) ([]Workspace, error) {
 	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces", organization)
 	workspaces := []Workspace{}
@@ -137,6 +141,8 @@ func (c *Client) ListWorkspaces(organization string) ([]Workspace, error) {
 }
 
 // GetWorkspace gets a specific workspace
+// Requires 1 request:
+// - /api/v2/organizations/:organizationName/workspaces/:workspaceName
 func (c *Client) GetWorkspace(organization, workspace string) (Workspace, error) {
 	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces/%s", organization, workspace)
 
@@ -156,6 +162,8 @@ func (c *Client) GetWorkspace(organization, workspace string) (Workspace, error)
 }
 
 // ListStateVersions lists all state versions for a given workspace
+// Requires P requests, where P is the number of pages
+// - /api/v2/state-versions
 func (c *Client) ListStateVersions(organization, workspace string) ([]StateVersion, error) {
 	q := url.Values{}
 	q.Add("filter[organization][name]", organization)
@@ -196,33 +204,35 @@ func (c *Client) ListStateVersions(organization, workspace string) ([]StateVersi
 
 // GetLatestStateVersion gets the latest state version for a given
 // workspace
+// Requires 2 requests:
+// - GetWorkspace (1)
+// - /api/v2/workspaces/:workspaceID/current-state-version
 func (c *Client) GetLatestStateVersion(organization, workspace string) (StateVersion, error) {
-	q := url.Values{}
-	q.Add("filter[organization][name]", organization)
-	q.Add("filter[workspace][name]", workspace)
+	workspaceData, err := c.GetWorkspace(organization, workspace)
+	if err != nil {
+		return StateVersion{}, err
+	}
 
-	path := "/api/v2/state-versions"
+	path := fmt.Sprintf("/api/v2/workspaces/%s/current-state-version", workspaceData.ID)
 
 	type wrapper struct {
-		Data []StateVersion `json:"data"`
+		Data StateVersion `json:"data"`
 	}
 
 	var resp wrapper
-	if err := c.do("GET", path, nil, q, &resp); err != nil {
+	if err := c.do("GET", path, nil, nil, &resp); err != nil {
 		if err == ErrNotFound {
 			return StateVersion{}, ErrStateVersionNotFound
 		}
 		return StateVersion{}, err
 	}
 
-	if len(resp.Data) < 1 {
-		return StateVersion{}, ErrStateVersionNotFound
-	}
-
-	return resp.Data[0], nil
+	return resp.Data, nil
 }
 
 // GetStateVersion gets a specific state version
+// Requires 1 request:
+// - /api/v2/state-versions/:stateVersion
 func (c *Client) GetStateVersion(organization, workspace, stateVersion string) (StateVersion, error) {
 	path := fmt.Sprintf("/api/v2/state-versions/%s", stateVersion)
 
@@ -242,14 +252,32 @@ func (c *Client) GetStateVersion(organization, workspace, stateVersion string) (
 }
 
 // DownloadState downloads the raw state file from Terraform Enterprise
+// Requires 2 requests:
+// - GetStateVersion (1)
+// - download from HostedStateDownloadURL
 func (c *Client) DownloadState(organization, workspace, stateVersion string) ([]byte, error) {
 	sv, err := c.GetStateVersion(organization, workspace, stateVersion)
 	if err != nil {
 		return nil, err
 	}
+	return c.downloadStateVersion(sv)
+}
 
+// DownloadLatestState downloads the raw state file from Terraform Enterprise
+// Requires 3 requests:
+// - GetLatestStateVersion (2)
+// - download from HostedStateDownloadURL
+func (c *Client) DownloadLatestState(organization, workspace string) ([]byte, error) {
+	sv, err := c.GetLatestStateVersion(organization, workspace)
+	if err != nil {
+		return nil, err
+	}
+	return c.downloadStateVersion(sv)
+}
+
+func (c *Client) downloadStateVersion(sv StateVersion) ([]byte, error) {
 	var resp *http.Response
-	err = withRetries(
+	err := withRetries(
 		func() error {
 			var err error
 			resp, err = c.client.Get(sv.Attributes.HostedStateDownloadURL)
