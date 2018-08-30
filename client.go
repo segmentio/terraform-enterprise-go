@@ -307,6 +307,51 @@ func (c *Client) DownloadState(organization, workspace, stateVersion string) ([]
 	return raw, err
 }
 
+// DownloadLatestState downloads the raw state file from Terraform Enterprise
+// Requires 2 requests:
+// - GetLatestStateVersion (1)
+// - download from HostedStateDownloadURL
+func (c *Client) DownloadLatestState(organization, workspace string) ([]byte, error) {
+	sv, err := c.GetLatestStateVersion(organization, workspace)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp *http.Response
+	err = withRetries(
+		func() error {
+			var err error
+			resp, err = c.client.Get(sv.Attributes.HostedStateDownloadURL)
+			if err != nil {
+				return err
+			}
+
+			if resp.StatusCode != 200 {
+				return ErrBadStatus
+			}
+			return nil
+		},
+		func(e error) bool {
+			if e == ErrBadStatus {
+				return true
+			}
+			if e, ok := e.(net.Error); ok && e.Timeout() {
+				// Retry timeouts
+				return true
+			}
+			return false
+		},
+		10,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	raw, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	return raw, err
+}
+
 func (c *Client) do(method string, path string, body io.Reader, query url.Values, recv interface{}) error {
 	parsed, err := url.Parse(c.BaseURL)
 	if err != nil {
