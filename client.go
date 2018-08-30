@@ -77,6 +77,8 @@ func NewWithClient(atlasToken string, baseURL string, client *http.Client) *Clie
 }
 
 // ListOrganizations lists all organizations your token can access
+// Requires P requests, where P is the number of pages
+// - /api/v2/organizations
 func (c *Client) ListOrganizations() ([]Organization, error) {
 	path := "/api/v2/organizations"
 	orgs := []Organization{}
@@ -104,6 +106,8 @@ func (c *Client) ListOrganizations() ([]Organization, error) {
 }
 
 // ListWorkspaces lists all workspaces for a given organization
+// Requires P requests, where P is the number of pages
+// - /api/v2/organizations/:organizationName/workspaces
 func (c *Client) ListWorkspaces(organization string) ([]Workspace, error) {
 	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces", organization)
 	workspaces := []Workspace{}
@@ -137,6 +141,8 @@ func (c *Client) ListWorkspaces(organization string) ([]Workspace, error) {
 }
 
 // GetWorkspace gets a specific workspace
+// Requires 1 request:
+// - /api/v2/organizations/:organizationName/workspaces/:workspaceName
 func (c *Client) GetWorkspace(organization, workspace string) (Workspace, error) {
 	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces/%s", organization, workspace)
 
@@ -156,6 +162,8 @@ func (c *Client) GetWorkspace(organization, workspace string) (Workspace, error)
 }
 
 // ListStateVersions lists all state versions for a given workspace
+// Requires P requests, where P is the number of pages
+// - /api/v2/state-versions
 func (c *Client) ListStateVersions(organization, workspace string) ([]StateVersion, error) {
 	q := url.Values{}
 	q.Add("filter[organization][name]", organization)
@@ -196,6 +204,17 @@ func (c *Client) ListStateVersions(organization, workspace string) ([]StateVersi
 
 // GetLatestStateVersion gets the latest state version for a given
 // workspace
+//
+// Note: according to Hashicorp support, this may return the wrong state
+// version in exceptional cases:
+//
+//    [N]ormally, the first returned state version will be the latest,
+//    there may be exceptional cases where that isn't true, especially
+//    in the future if a "state revert" function is added.
+//    -- Alexis Grant (HashiCorp) Aug 27, 5:58 PM PDT
+//
+// Requires 1 request:
+// - /api/v2/state-versions
 func (c *Client) GetLatestStateVersion(organization, workspace string) (StateVersion, error) {
 	q := url.Values{}
 	q.Add("filter[organization][name]", organization)
@@ -223,6 +242,8 @@ func (c *Client) GetLatestStateVersion(organization, workspace string) (StateVer
 }
 
 // GetStateVersion gets a specific state version
+// Requires 1 request:
+// - /api/v2/state-versions/:stateVersion
 func (c *Client) GetStateVersion(organization, workspace, stateVersion string) (StateVersion, error) {
 	path := fmt.Sprintf("/api/v2/state-versions/%s", stateVersion)
 
@@ -242,6 +263,9 @@ func (c *Client) GetStateVersion(organization, workspace, stateVersion string) (
 }
 
 // DownloadState downloads the raw state file from Terraform Enterprise
+// Requires 2 requests:
+// - GetStateVersion (1)
+// - download from HostedStateDownloadURL
 func (c *Client) DownloadState(organization, workspace, stateVersion string) ([]byte, error) {
 	sv, err := c.GetStateVersion(organization, workspace, stateVersion)
 	if err != nil {
