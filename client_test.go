@@ -49,3 +49,27 @@ func TestDownloadStateVersionLatest(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func BenchmarkDownloadStateVersionLatest(b *testing.B) {
+	if !liveEnabled() || *testOrg == "" || *testWorkspace == "" {
+		b.Skip("missing -enable-live or -org or -workspace")
+	}
+
+	if b.N > 10 {
+		b.N = 10
+	}
+
+	c := New(*testAuthToken, DefaultBaseURL)
+
+	for n := 0; n < b.N; n++ {
+		latest, err := c.GetLatestStateVersion(*testOrg, *testWorkspace)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		_, err = c.DownloadState(*testOrg, *testWorkspace, latest.ID)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
