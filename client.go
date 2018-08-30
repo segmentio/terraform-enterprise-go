@@ -204,41 +204,30 @@ func (c *Client) ListStateVersions(organization, workspace string) ([]StateVersi
 
 // GetLatestStateVersion gets the latest state version for a given
 // workspace
-//
-// Note: according to Hashicorp support, this may return the wrong state
-// version in exceptional cases:
-//
-//    [N]ormally, the first returned state version will be the latest,
-//    there may be exceptional cases where that isn't true, especially
-//    in the future if a "state revert" function is added.
-//    -- Alexis Grant (HashiCorp) Aug 27, 5:58 PM PDT
-//
-// Requires 1 request:
-// - /api/v2/state-versions
+// Requires 2 requests:
+// - GetWorkspace (1)
+// - /api/v2/workspaces/:workspaceID/current-state-version
 func (c *Client) GetLatestStateVersion(organization, workspace string) (StateVersion, error) {
-	q := url.Values{}
-	q.Add("filter[organization][name]", organization)
-	q.Add("filter[workspace][name]", workspace)
+	workspaceData, err := c.GetWorkspace(organization, workspace)
+	if err != nil {
+		return StateVersion{}, err
+	}
 
-	path := "/api/v2/state-versions"
+	path := fmt.Sprintf("/api/v2/workspaces/%s/current-state-version", workspaceData.ID)
 
 	type wrapper struct {
-		Data []StateVersion `json:"data"`
+		Data StateVersion `json:"data"`
 	}
 
 	var resp wrapper
-	if err := c.do("GET", path, nil, q, &resp); err != nil {
+	if err := c.do("GET", path, nil, nil, &resp); err != nil {
 		if err == ErrNotFound {
 			return StateVersion{}, ErrStateVersionNotFound
 		}
 		return StateVersion{}, err
 	}
 
-	if len(resp.Data) < 1 {
-		return StateVersion{}, ErrStateVersionNotFound
-	}
-
-	return resp.Data[0], nil
+	return resp.Data, nil
 }
 
 // GetStateVersion gets a specific state version
@@ -308,8 +297,8 @@ func (c *Client) DownloadState(organization, workspace, stateVersion string) ([]
 }
 
 // DownloadLatestState downloads the raw state file from Terraform Enterprise
-// Requires 2 requests:
-// - GetLatestStateVersion (1)
+// Requires 3 requests:
+// - GetLatestStateVersion (2)
 // - download from HostedStateDownloadURL
 func (c *Client) DownloadLatestState(organization, workspace string) ([]byte, error) {
 	sv, err := c.GetLatestStateVersion(organization, workspace)
