@@ -1,6 +1,7 @@
 package tfe
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -155,6 +156,36 @@ func (c *Client) GetWorkspace(organization, workspace string) (Workspace, error)
 		if err == ErrNotFound {
 			return Workspace{}, ErrWorkspaceNotFound
 		}
+		return Workspace{}, err
+	}
+
+	return resp.Data, nil
+}
+
+// CreateWorkspace creates a new workspace
+// Requires 1 request:
+// - /api/v2/organizations/:organizationName/workspaces
+func (c *Client) CreateWorkspace(organization, workspace string) (Workspace, error) {
+	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces", organization)
+
+	payload := Workspace{
+		Type: "workspaces",
+		Attributes: WorkspaceAttributes{
+			Name: workspace,
+		},
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return Workspace{}, err
+	}
+
+	type wrapper struct {
+		Data Workspace `json:"data"`
+	}
+
+	var resp wrapper
+	if err := c.do("POST", path, bytes.NewBuffer(b), nil, &resp); err != nil {
 		return Workspace{}, err
 	}
 
