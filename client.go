@@ -171,6 +171,8 @@ func (c *Client) CreateWorkspace(organization string, options CreateWorkspaceOpt
 	payload := Workspace{
 		Type: "workspaces",
 		Attributes: WorkspaceAttributes{
+			Name:             options.Name,
+			TerraformVersion: options.TerraformVersion,
 			VCSRepo: VCSRepo{
 				Identifier:   options.VCSIdentifier,
 				OauthTokenID: options.VCSOauthKeyID,
@@ -178,13 +180,13 @@ func (c *Client) CreateWorkspace(organization string, options CreateWorkspaceOpt
 		},
 	}
 
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return Workspace{}, err
-	}
-
 	type wrapper struct {
 		Data Workspace `json:"data"`
+	}
+
+	b, err := json.Marshal(wrapper{Data: payload})
+	if err != nil {
+		return Workspace{}, err
 	}
 
 	var resp wrapper
@@ -227,14 +229,14 @@ func (c *Client) AssignWorkspaceSSHKey(workspaceID string, sshKeyID string) erro
 // Creates a new Variable for a given workspace
 // POST - /vars
 func (c *Client) CreateVariable(workspaceID string, options CreateVariableOptions) (Variable, error) {
-	path := "/api/v2/vars/"
+	path := "/api/v2/vars"
 
-	payload := VariableAttributes{
-		Key:       options.Key,
-		Value:     options.Value,
-		Category:  options.Category,
-		HCL:       options.HCL,
-		Sensitive: options.Sensitive,
+	type wrapper struct {
+		Data Variable `json:"data"`
+	}
+
+	payload := Variable{
+		Type: "vars",
 		Relationships: Relationships{
 			"workspace": Relationship{
 				Data: RelationshipData{
@@ -243,15 +245,18 @@ func (c *Client) CreateVariable(workspaceID string, options CreateVariableOption
 				},
 			},
 		},
+		Attributes: VariableAttributes{
+			Key:       options.Key,
+			Value:     options.Value,
+			Category:  options.Category,
+			HCL:       options.HCL,
+			Sensitive: options.Sensitive,
+		},
 	}
 
-	b, err := json.Marshal(payload)
+	b, err := json.Marshal(wrapper{Data: payload})
 	if err != nil {
 		return Variable{}, err
-	}
-
-	type wrapper struct {
-		Data Variable `json:"data"`
 	}
 
 	var resp wrapper
@@ -445,7 +450,7 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 				return ErrUnauthorized
 			case resp.StatusCode == 404:
 				return ErrNotFound
-			case resp.StatusCode != 200:
+			case resp.StatusCode > 299:
 				return ErrBadStatus
 			}
 

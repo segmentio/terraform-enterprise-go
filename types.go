@@ -40,12 +40,11 @@ type Variable struct {
 }
 
 type VariableAttributes struct {
-	Key           string        `json:"key"`
-	Value         string        `json:"value"`
-	Category      string        `json:"category"`
-	HCL           bool          `json:hcl`
-	Sensitive     bool          `json:sensitive`
-	Relationships Relationships `json:"relationships"`
+	Key       string `json:"key"`
+	Value     string `json:"value"`
+	Category  string `json:"category"`
+	HCL       bool   `json:"hcl"`
+	Sensitive bool   `json:"sensitive"`
 }
 
 type VCSRepo struct {
@@ -90,14 +89,12 @@ type CreateWorkspaceOptions struct {
 	TerraformVersion string
 	VCSIdentifier    string
 	VCSOauthKeyID    string
-	VCSSSHKeyID      string
 }
 
 type CreateVariableOptions struct {
-	Key      string `validate:"required"`
-	Value    string `validate:"required"`
-	Category string `validate:"required"`
-
+	Key       string `validate:"required"`
+	Value     string `validate:"required"`
+	Category  string `validate:"required"`
 	Sensitive bool
 	HCL       bool
 }
