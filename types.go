@@ -31,6 +31,23 @@ type WorkspaceAttributes struct {
 	Actions          map[string]bool `json:"actions"`
 }
 
+type Variable struct {
+	ID            string             `json:"id"`
+	Type          string             `json:"type"`
+	Attributes    VariableAttributes `json:"attributes"`
+	Relationships Relationships      `json:"relationships"`
+	Links         Links              `json:"links"`
+}
+
+type VariableAttributes struct {
+	Key           string        `json:"key"`
+	Value         string        `json:"value"`
+	Category      string        `json:"category"`
+	HCL           bool          `json:hcl`
+	Sensitive     bool          `json:sensitive`
+	Relationships Relationships `json:"relationships"`
+}
+
 type VCSRepo struct {
 	Branch            string `json:"branch"`
 	IngressSubmodules bool   `json:"ingress-submodules"`
@@ -66,4 +83,29 @@ type StateVersionAttributes struct {
 	CreatedAt              time.Time `json:"created-at"`
 	HostedStateDownloadURL string    `json:"hosted-state-download-url"`
 	Serial                 int       `json:"serial"`
+}
+
+type CreateWorkspaceOptions struct {
+	Name          string `validate:"required"`
+	VCSIdentifier string
+	VCSOauthKeyID string
+	VCSSSHKeyID   string
+}
+
+type CreateVariableOptions struct {
+	Key      string `validate:"required"`
+	Value    string `validate:"required"`
+	Category string `validate:"required"`
+
+	Sensitive bool
+	HCL       bool
+}
+
+type AssignSSHKeyPayload struct {
+	Type string           `json:"type"`
+	Data SSHKeyAttributes `json:"data"`
+}
+
+type SSHKeyAttributes struct {
+	ID string `json:"id"`
 }

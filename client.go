@@ -165,13 +165,16 @@ func (c *Client) GetWorkspace(organization, workspace string) (Workspace, error)
 // CreateWorkspace creates a new workspace
 // Requires 1 request:
 // - /api/v2/organizations/:organizationName/workspaces
-func (c *Client) CreateWorkspace(organization, workspace string) (Workspace, error) {
+func (c *Client) CreateWorkspace(organization, options CreateWorkspaceOptions) (Workspace, error) {
 	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces", organization)
 
 	payload := Workspace{
 		Type: "workspaces",
 		Attributes: WorkspaceAttributes{
-			Name: workspace,
+			VCSRepo: VCSRepo{
+				Identifier:   options.VCSIdentifier,
+				OauthTokenID: options.VCSOauthKeyID,
+			},
 		},
 	}
 
@@ -187,6 +190,73 @@ func (c *Client) CreateWorkspace(organization, workspace string) (Workspace, err
 	var resp wrapper
 	if err := c.do("POST", path, bytes.NewBuffer(b), nil, &resp); err != nil {
 		return Workspace{}, err
+	}
+
+	return resp.Data, nil
+}
+
+// Assigns SSH Key for a given workspace
+// PATCH - /api/v2/
+func (c *Client) AssignWorkspaceSSHKey(workspaceID string, sshKeyID string) error {
+	path := fmt.Sprintf("/api/v2/workspaces/%s/relationships/ssh-key", workspaceID)
+
+	payload := AssignSSHKeyPayload{
+		Type: "workspaces",
+		Data: SSHKeyAttributes{
+			ID: sshKeyID,
+		},
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	type wrapper struct {
+		Data Workspace `json:"data"`
+	}
+
+	var resp wrapper
+	if err := c.do(http.MethodPatch, path, bytes.NewBuffer(b), nil, &resp); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Creates a new Variable for a given workspace
+// POST - /vars
+func (c *Client) CreateVariable(workspaceID string, options CreateVariableOptions) (Variable, error) {
+	path := "/api/v2/vars/"
+
+	payload := VariableAttributes{
+		Key:       options.Key,
+		Value:     options.Value,
+		Category:  options.Category,
+		HCL:       options.HCL,
+		Sensitive: options.Sensitive,
+		Relationships: Relationships{
+			"workspace": Relationship{
+				Data: RelationshipData{
+					Type: "workspaces",
+					ID:   workspaceID,
+				},
+			},
+		},
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return Variable{}, err
+	}
+
+	type wrapper struct {
+		Data Variable `json:"data"`
+	}
+
+	var resp wrapper
+	if err := c.do(http.MethodPost, path, bytes.NewBuffer(b), nil, &resp); err != nil {
+		return Variable{}, err
 	}
 
 	return resp.Data, nil
