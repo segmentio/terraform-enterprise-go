@@ -86,10 +86,11 @@ type StateVersionAttributes struct {
 }
 
 type CreateWorkspaceOptions struct {
-	Name          string `validate:"required"`
-	VCSIdentifier string
-	VCSOauthKeyID string
-	VCSSSHKeyID   string
+	Name             string `validate:"required"`
+	TerraformVersion string
+	VCSIdentifier    string
+	VCSOauthKeyID    string
+	VCSSSHKeyID      string
 }
 
 type CreateVariableOptions struct {

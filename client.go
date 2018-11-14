@@ -165,7 +165,7 @@ func (c *Client) GetWorkspace(organization, workspace string) (Workspace, error)
 // CreateWorkspace creates a new workspace
 // Requires 1 request:
 // - /api/v2/organizations/:organizationName/workspaces
-func (c *Client) CreateWorkspace(organization, options CreateWorkspaceOptions) (Workspace, error) {
+func (c *Client) CreateWorkspace(organization string, options CreateWorkspaceOptions) (Workspace, error) {
 	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces", organization)
 
 	payload := Workspace{
