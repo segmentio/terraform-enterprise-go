@@ -162,6 +162,43 @@ func (c *Client) GetWorkspace(organization, workspace string) (Workspace, error)
 	return resp.Data, nil
 }
 
+// CreateRun creates a new run for a given workspace
+// Requires 1 request:
+// - POST /api/v2/runs
+func (c *Client) CreateRun(workspaceID string) (Run, error) {
+	path := "/api/v2/runs"
+
+	type wrapper struct {
+		Data RunInput `json:"data"`
+	}
+
+	payload := RunInput{
+		Relationships: Relationships{
+			"workspace": Relationship{
+				Data: RelationshipData{
+					Type: "workspaces",
+					ID:   workspaceID,
+				},
+			},
+		},
+	}
+
+	b, err := json.Marshal(wrapper{Data: payload})
+	if err != nil {
+		return Run{}, err
+	}
+
+	type wrapperResp struct {
+		Data Run `json:"data"`
+	}
+	var resp wrapperResp
+	if err := c.do(http.MethodPost, path, bytes.NewBuffer(b), nil, &resp); err != nil {
+		return Run{}, err
+	}
+
+	return resp.Data, nil
+}
+
 // CreateWorkspace creates a new workspace
 // Requires 1 request:
 // - /api/v2/organizations/:organizationName/workspaces

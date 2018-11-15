@@ -59,6 +59,21 @@ func TestCreateWorkspace(t *testing.T) {
 	t.Logf("got Workspace: %#v", w)
 }
 
+func TestCreateRun(t *testing.T) {
+	if !liveEnabled() || *testWorkspace == "" || !writesEnabled() {
+		t.Skip("missing -enable-live or -workspace or -allow-writes")
+	}
+
+	c := New(*testAuthToken, DefaultBaseURL)
+
+	r, err := c.CreateRun(*testWorkspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("got Run: %#v", r)
+}
+
 func TestCreateVariable(t *testing.T) {
 	if !liveEnabled() || *testWorkspace == "" || !writesEnabled() {
 		t.Skip("missing -enable-live or -workspace -allow-writes")
