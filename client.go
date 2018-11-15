@@ -1,6 +1,7 @@
 package tfe
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -156,6 +157,148 @@ func (c *Client) GetWorkspace(organization, workspace string) (Workspace, error)
 			return Workspace{}, ErrWorkspaceNotFound
 		}
 		return Workspace{}, err
+	}
+
+	return resp.Data, nil
+}
+
+// CreateRun creates a new run for a given workspace
+// Requires 1 request:
+// - POST /api/v2/runs
+func (c *Client) CreateRun(workspaceID string) (Run, error) {
+	path := "/api/v2/runs"
+
+	type wrapper struct {
+		Data RunInput `json:"data"`
+	}
+
+	payload := RunInput{
+		Relationships: Relationships{
+			"workspace": Relationship{
+				Data: RelationshipData{
+					Type: "workspaces",
+					ID:   workspaceID,
+				},
+			},
+		},
+	}
+
+	b, err := json.Marshal(wrapper{Data: payload})
+	if err != nil {
+		return Run{}, err
+	}
+
+	type wrapperResp struct {
+		Data Run `json:"data"`
+	}
+	var resp wrapperResp
+	if err := c.do(http.MethodPost, path, bytes.NewBuffer(b), nil, &resp); err != nil {
+		return Run{}, err
+	}
+
+	return resp.Data, nil
+}
+
+// CreateWorkspace creates a new workspace
+// Requires 1 request:
+// - /api/v2/organizations/:organizationName/workspaces
+func (c *Client) CreateWorkspace(organization string, options CreateWorkspaceOptions) (Workspace, error) {
+	path := fmt.Sprintf("/api/v2/organizations/%s/workspaces", organization)
+
+	payload := Workspace{
+		Type: "workspaces",
+		Attributes: WorkspaceAttributes{
+			Name:             options.Name,
+			TerraformVersion: options.TerraformVersion,
+			VCSRepo: VCSRepo{
+				Identifier:   options.VCSIdentifier,
+				OauthTokenID: options.VCSOauthKeyID,
+			},
+		},
+	}
+
+	type wrapper struct {
+		Data Workspace `json:"data"`
+	}
+
+	b, err := json.Marshal(wrapper{Data: payload})
+	if err != nil {
+		return Workspace{}, err
+	}
+
+	var resp wrapper
+	if err := c.do("POST", path, bytes.NewBuffer(b), nil, &resp); err != nil {
+		return Workspace{}, err
+	}
+
+	return resp.Data, nil
+}
+
+// Assigns SSH Key for a given workspace
+// PATCH - /api/v2/
+func (c *Client) AssignWorkspaceSSHKey(workspaceID string, sshKeyID string) error {
+	path := fmt.Sprintf("/api/v2/workspaces/%s/relationships/ssh-key", workspaceID)
+
+	payload := AssignSSHKeyPayload{
+		Type: "workspaces",
+		Data: SSHKeyAttributes{
+			ID: sshKeyID,
+		},
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	type wrapper struct {
+		Data Workspace `json:"data"`
+	}
+
+	var resp wrapper
+	if err := c.do(http.MethodPatch, path, bytes.NewBuffer(b), nil, &resp); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Creates a new Variable for a given workspace
+// POST - /vars
+func (c *Client) CreateVariable(workspaceID string, options CreateVariableOptions) (Variable, error) {
+	path := "/api/v2/vars"
+
+	type wrapper struct {
+		Data Variable `json:"data"`
+	}
+
+	payload := Variable{
+		Type: "vars",
+		Relationships: Relationships{
+			"workspace": Relationship{
+				Data: RelationshipData{
+					Type: "workspaces",
+					ID:   workspaceID,
+				},
+			},
+		},
+		Attributes: VariableAttributes{
+			Key:       options.Key,
+			Value:     options.Value,
+			Category:  options.Category,
+			HCL:       options.HCL,
+			Sensitive: options.Sensitive,
+		},
+	}
+
+	b, err := json.Marshal(wrapper{Data: payload})
+	if err != nil {
+		return Variable{}, err
+	}
+
+	var resp wrapper
+	if err := c.do(http.MethodPost, path, bytes.NewBuffer(b), nil, &resp); err != nil {
+		return Variable{}, err
 	}
 
 	return resp.Data, nil
@@ -344,7 +487,7 @@ func (c *Client) do(method string, path string, body io.Reader, query url.Values
 				return ErrUnauthorized
 			case resp.StatusCode == 404:
 				return ErrNotFound
-			case resp.StatusCode != 200:
+			case resp.StatusCode > 299:
 				return ErrBadStatus
 			}
 
